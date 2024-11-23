@@ -60,7 +60,7 @@ type Deck = [Card]
 
 {- EXERCISE 1: Deck Creation -}
 deckOf52 :: [Card]
-deckOf52 = error "fill in 'deckOf52' in Deck.hs"
+deckOf52 = [mkCard suit value | suit <- [Spades, Clubs, Diamonds, Hearts], value <- [Ace .. King]]
 
 {- You can use this to check whether your shuffled deck contains the correct
  - cards -}
@@ -70,8 +70,27 @@ deckCorrect deck = sort deck == sort deckOf52
 {- Shuffling -}
 
 {- EXERCISE 2: Fisher-Yates Shuffle -}
+switch :: Int -> Int -> [a] -> [a]
+switch i j xs
+    | i == j    = xs
+    | otherwise = let
+        elemI = xs !! i
+        elemJ = xs !! j
+        in [if k == i then elemJ
+           else if k == j then elemI
+           else x | (x, k) <- zip xs [0..]]
+
+
 shuffle :: StdGen -> Deck -> Deck
-shuffle rng deck = error "fill in 'shuffle' in Deck.hs"
+shuffle rng deck = shuffle' rng deck 0 (length deck - 1)
+  where
+    shuffle' :: StdGen -> [Card] -> Int -> Int -> [Card]
+    shuffle' _ deck' i n
+        | i >= n = deck'
+        | otherwise =
+            let (j, newRng) = uniformR (i, n) rng
+                swappedDeck = switch i j deck'
+            in shuffle' newRng swappedDeck (i + 1) n
 
 {- shuffleDeck is called by Main.hs when setting up -}
 shuffleDeck :: IO Deck
