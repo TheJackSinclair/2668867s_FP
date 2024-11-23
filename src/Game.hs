@@ -63,27 +63,60 @@ data Board = MkBoard {
 {- EXERCISE 3: Show instance for the board -}
 {- We recommend writing helper functions. -}
 
-showDeck :: [Card] -> String
-showDeck deck = "Deck: " ++ show deck
-
-showDiscard :: [Card] -> String
-showDiscard discard = "Discard: " ++ show discard
-
-showPillars :: Pillars -> String
-showPillars pillars = "Pillars: " ++ show pillars
-
-showColumns :: [Column] -> String
-showColumns columns = 
-    "Columns:\n" ++ 
-    unlines (zipWith (\i col -> "  Column " ++ show i ++ ": " ++ show col) [1..] columns)
-
 instance Show Board where
-     show b = 
-        "Board:\n" ++
-        showDeck (boardDeck b) ++ "\n" ++
-        showDiscard (boardDiscard b) ++ "\n" ++
-        showPillars (boardPillars b) ++ "\n" ++
-        showColumns (boardColumns b)
+    show b =
+        unlines [
+            showDeckSize (boardDeck b),
+            showDiscard (boardDiscard b),
+            showPillars (boardPillars b),
+            showColumnHeaders,
+            showColumns (boardColumns b)
+        ]
+
+-- Show the size of the deck
+showDeckSize :: [Card] -> String
+showDeckSize deck = "Deck size: " ++ show (length deck)
+
+-- Show the discard pile
+showDiscard :: [Card] -> String
+showDiscard discard = "Discard: " ++ unwords (map show (reverse (take 3 (reverse discard))))
+
+-- Show the pillars
+showPillars :: Pillars -> String
+showPillars pillars =
+    "Pillars:\n" ++
+    "  Spades:   " ++ showPillar (spades pillars) ++ "\n" ++
+    "  Clubs:    " ++ showPillar (clubs pillars) ++ "\n" ++
+    "  Hearts:   " ++ showPillar (hearts pillars) ++ "\n" ++
+    "  Diamonds: " ++ showPillar (diamonds pillars)
+
+showPillar :: Maybe Value -> String
+showPillar Nothing = "<empty>"
+showPillar (Just v) = show v
+
+-- Show the column headers
+showColumnHeaders :: String
+showColumnHeaders = unwords [ "[" ++ show i ++ "]" | i <- [0..6] ]
+
+-- Show the columns row by row
+showColumns :: [Column] -> String
+showColumns columns =
+    let maxHeight = maximum (map length columns)
+    in unlines [unwords [showColumnCard (getRow col row) | col <- columns] | row <- [0..maxHeight-1]]
+
+-- Get a card from a specific row in the column (or return Nothing)
+getRow :: Column -> Int -> Maybe (Card, Bool)
+getRow col row
+    | row < length col = Just (col !! row)
+    | otherwise = Nothing
+
+-- Format a single card in a column
+showColumnCard :: Maybe (Card, Bool) -> String
+showColumnCard (Just (card, True))  = show card    -- Face-up card
+showColumnCard (Just (_, False)) = "???"           -- Hidden card
+showColumnCard Nothing = "   "                     -- Empty space
+
+
 
 {- EXERCISE 4: Board Setup -}
 markCards :: [Card] -> Column
@@ -121,7 +154,7 @@ isWon b = all isKing [Spades, Clubs, Hearts, Diamonds]
   where
     pillars = boardPillars b
     isKing suit = getPillar pillars suit == Just King
-	
+
 {- Pillar helper functions -}
 -- Gets the pillar for a given suit.
 getPillar :: Pillars -> Suit -> Maybe Value
@@ -159,12 +192,11 @@ decPillar ps Diamonds = ps { diamonds = decValue $ diamonds ps }
 
 -- Flips the top card of all columns, if not already flipped
 flipTopCard :: Column -> Column
-flipTopCard [] = []
-flipTopCard col =
-    let (rest, (topCard, isVisible):remaining) = splitAt (length col - 1) col
-    in if isVisible
-       then col 
-       else rest ++ [(topCard, True)]
+flipTopCard [] = []  -- Empty column
+flipTopCard col
+    | snd (last col) = col  -- Top card already visible
+    | otherwise = init col ++ [(fst (last col), True)]  -- Make top card visible
+
 
 flipCards :: Board -> Board
 flipCards b = b { boardColumns = map flipTopCard (boardColumns b) }
@@ -173,7 +205,8 @@ flipCards b = b { boardColumns = map flipTopCard (boardColumns b) }
 canStack :: Card -> Card -> Bool
 canStack card onto = 
     (isRed card /= isRed onto) && 
-    (cardValue card == pred (cardValue onto))
+    (cardValue card /= Ace && cardValue card == pred (cardValue onto))
+
 
 -- Updates a column at the given index
 updateColumn :: Int -> Column -> [Column] -> [Column]
@@ -182,138 +215,164 @@ updateColumn n newCol columns =
 
 -- Checks whether it's possible to place a card onto a pillar.
 canStackOnPillar :: Card -> Maybe Value -> Bool
-canStackOnPillar card Nothing = cardValue card == Ace  
-canStackOnPillar card (Just v) = cardValue card == succ v  
+canStackOnPillar card Nothing = cardValue card == Ace
+canStackOnPillar card (Just v) = cardValue card /= King && cardValue card == succ v
+  
 
 
 {- EXERCISE 7: Draw -}
 draw :: Board -> Either Error Board
 draw b
-    | null (boardDeck b) && null (boardDiscard b) = Left DeckEmpty
-    | null (boardDeck b) =
+    | null (boardDeck b) && null (boardDiscard b) = Left DeckEmpty  -- No cards to draw
+    | null (boardDeck b) =  -- Deck is empty, reuse reversed discard
         let newDeck = reverse (boardDiscard b)
-        in Right b { boardDeck = tail newDeck, boardDiscard = [head newDeck] }
-    | otherwise =
+            newDiscard = [head newDeck]
+        in Right b { boardDeck = tail newDeck, boardDiscard = newDiscard }
+    | otherwise =  -- Normal draw
         let (card:restDeck) = boardDeck b
-        in Right b { boardDeck = restDeck, boardDiscard = card : boardDiscard b }
+            updatedDiscard = take 3 (card : boardDiscard b)  -- Keep only the top 3 cards in discard
+        in Right b { boardDeck = restDeck, boardDiscard = updatedDiscard }
 
- 
 
 {- EXERCISE 8: Move -}
+isKing :: Card -> Bool
+isKing card = cardValue card == King
+
+
 move :: Int -> Int -> Int -> Board -> Either Error Board
-move count from to b
-    | count <= 0 = Left InvalidCount
-    | from < 0 || from >= length cols = Left InvalidStack
-    | to < 0 || to >= length cols = Left InvalidStack
-    | null sourceVisible = Left ColumnEmpty
-    | count > length sourceVisible = Left MovingTooManyCards
-    | null target && topSourceCardValue /= King = Left ColumnKing
-    | not (canStack topSourceCard targetTopCard) = Left WrongOrder
-    | otherwise =
-        let updatedSource = sourceHidden ++ drop count sourceVisible
-            updatedTarget = sourceToMove ++ target
-            newCols = updateColumn to updatedTarget (updateColumn from updatedSource cols)
-        in Right b { boardColumns = newCols }
+move n s1 s2 board
+    | s1 < 0 || s1 >= length columns || s2 < 0 || s2 >= length columns = Left InvalidStack
+    | n < 1 = Left InvalidCount
+    | null fromCol = Left ColumnEmpty
+    | n > length visibleCards = Left MovingTooManyCards
+    | null toCol && not (isKing topCard) = Left ColumnKing
+    | not (null toCol) && not (canStack topCard (fst (last toCol))) = Left WrongOrder
+    | otherwise = Right $ board { boardColumns = updatedColumns }
   where
-    cols = boardColumns b
-    source = cols !! from
-    target = cols !! to
-    (sourceHidden, sourceVisible) = span (not . snd) source
-    sourceToMove = take count sourceVisible
-    topSourceCard = fst (head sourceToMove)
-    topSourceCardValue = cardValue topSourceCard
-    targetTopCard = if null target then error "No target card" else fst (head target)
+    columns = boardColumns board
+    fromCol = columns !! s1
+    toCol = columns !! s2
 
+    -- Get visible cards from the source column
+    visibleCards = reverse $ takeWhile snd $ reverse fromCol
 
+    -- Get the cards to move
+    cardsToMove = take n visibleCards
+
+    -- The top card being moved
+    topCard = fst $ head cardsToMove
+
+    -- Updated columns after the move
+    newFromCol = take (length fromCol - n) fromCol
+    newToCol = toCol ++ cardsToMove
+    updatedColumns = updateColumn s1 newFromCol $ updateColumn s2 newToCol columns
 
 
 {- EXERCISE 9: Move Stack -}
 moveStack :: Int -> Int -> Board -> Either Error Board
-moveStack from to b = 
-    let count = length (filter snd (boardColumns b !! from))
-    in move count from to b
+moveStack s1 s2 board
+    | s1 < 0 || s1 >= length columns || s2 < 0 || s2 >= length columns = Left InvalidStack
+    | null visibleCards = Left ColumnEmpty
+    | otherwise = move (length visibleCards) s1 s2 board
+  where
+    columns = boardColumns board
+    fromCol = columns !! s1
+
+    -- Extract visible cards from the source column
+    visibleCards = reverse $ takeWhile snd $ reverse fromCol
 
 
 
 {- EXERCISE 10: Move from Discard -}
 moveFromDiscard :: Int -> Board -> Either Error Board
-moveFromDiscard idx b
-    | null (boardDiscard b) = Left DiscardEmpty  -- Using Error constructor
-    | idx < 0 || idx >= length cols = Left InvalidStack
-    | null target && cardValue discardTop /= King = Left ColumnKing
-    | not (canStack discardTop targetTopCard) = Left WrongOrder
-    | otherwise =
-        let updatedDiscard = tail (boardDiscard b)
-            updatedTarget = (discardTop, True) : target
-            newCols = updateColumn idx updatedTarget cols
-        in Right b { boardDiscard = updatedDiscard, boardColumns = newCols }
+moveFromDiscard s board
+    | null discard = Left DiscardEmpty
+    | s < 0 || s >= length columns = Left InvalidStack
+    | null targetCol && not (isKing topDiscard) = Left ColumnKing
+    | not (null targetCol) && not (canStack topDiscard (fst $ last targetCol)) = Left WrongOrder
+    | otherwise = Right $ board { 
+        boardDiscard = tail discard, 
+        boardColumns = updateColumn s (targetCol ++ [(topDiscard, True)]) columns 
+      }
   where
-    discardTop = head (boardDiscard b)  -- The top card from the discard pile
-    cols = boardColumns b               -- The list of columns
-    target = cols !! idx                -- Target column
-    targetTopCard = if null target then error "Unexpected empty target" else fst (head target)
+    discard = boardDiscard board
+    columns = boardColumns board
+    targetCol = columns !! s
 
-
-
+    -- Get the top card from the discard pile
+    topDiscard = head discard
 
 
 {- EXERCISE 11: Move to Pillar -} 
 moveToPillar :: CardSource -> Board -> Either Error Board
-moveToPillar (FromStack idx) b
-    | idx < 0 || idx >= length cols = Left InvalidStack
-    | null source = Left ColumnEmpty
-    | not (canStackOnPillar topCard pillarTop) = Left WrongPillarOrder
-    | otherwise =
-        let updatedSource = tail source
-            updatedPillars = incPillar pillars (cardSuit topCard)
-            newCols = updateColumn idx updatedSource cols
-        in Right b { boardColumns = newCols, boardPillars = updatedPillars }
+moveToPillar cardSource board = case cardSource of
+    FromDiscard ->
+        if null discard
+        then Left DiscardEmpty
+        else moveCardToPillar topDiscard board { boardDiscard = tail discard }
+    FromStack s ->
+        if s < 0 || s >= length columns
+        then Left InvalidStack
+        else if null (columns !! s)
+        then Left ColumnEmpty
+        else 
+            let topCardFromStack = fst (last (columns !! s))
+                newColumn = init (columns !! s)
+            in moveCardToPillar topCardFromStack board { boardColumns = updateColumn s newColumn columns }
   where
-    cols = boardColumns b
-    pillars = boardPillars b
-    source = cols !! idx
-    topCard = fst (head source)
-    pillarTop = getPillar pillars (cardSuit topCard)
+    discard = boardDiscard board
+    columns = boardColumns board
+    pillars = boardPillars board
 
-moveToPillar FromDiscard b
-    | null (boardDiscard b) = Left DiscardEmpty
-    | not (canStackOnPillar topCard pillarTop) = Left WrongPillarOrder
-    | otherwise =
-        let updatedDiscard = tail (boardDiscard b)
-            updatedPillars = incPillar pillars (cardSuit topCard)
-        in Right b { boardDiscard = updatedDiscard, boardPillars = updatedPillars }
-  where
-    topCard = head (boardDiscard b)
-    pillars = boardPillars b
-    pillarTop = getPillar pillars (cardSuit topCard)
+    -- Get the top card from discard
+    topDiscard = head discard
 
+    -- Move card to the appropriate pillar
+    moveCardToPillar :: Card -> Board -> Either Error Board
+    moveCardToPillar card b =
+        let suit = cardSuit card
+        in case suit of
+            Spades   -> tryAddToPillar spades (\p -> b { boardPillars = pillars { spades = p } })
+            Clubs    -> tryAddToPillar clubs (\p -> b { boardPillars = pillars { clubs = p } })
+            Hearts   -> tryAddToPillar hearts (\p -> b { boardPillars = pillars { hearts = p } })
+            Diamonds -> tryAddToPillar diamonds (\p -> b { boardPillars = pillars { diamonds = p } })
+      where
+        tryAddToPillar :: (Pillars -> Maybe Value) -> (Maybe Value -> Board) -> Either Error Board
+        tryAddToPillar getPillar updateBoard =
+            let currentValue = getPillar pillars
+            in if canAddToPillar card currentValue
+               then Right (updateBoard (incValue currentValue))
+               else Left WrongPillarOrder
 
-
+-- Checks whether a card can be added to a pillar
+canAddToPillar :: Card -> Maybe Value -> Bool
+canAddToPillar card Nothing = cardValue card == Ace
+canAddToPillar card (Just v) = cardValue card == succ v
 
             
 {- EXERCISE 12: Move from Pillar -}
 moveFromPillar :: Suit -> Int -> Board -> Either Error Board
-moveFromPillar suit idx b
-    | idx < 0 || idx >= length cols = Left InvalidStack  -- Invalid column index
-    | pillarTop == Nothing = Left PillarEmpty            -- Empty pillar
-    | null target && cardValue topCard /= King = Left ColumnKing
-    | not (canStack topCard targetTopCard) = Left WrongOrder
-    | otherwise =
-        let updatedPillars = decPillar pillars suit       -- Remove the top card from the pillar
-            updatedTarget = (topCard, True) : target     -- Add the card to the target column
-            newCols = updateColumn idx updatedTarget cols
-        in Right b { boardPillars = updatedPillars, boardColumns = newCols }
+moveFromPillar suit s board
+    | pillarValue == Nothing = Left PillarEmpty
+    | s < 0 || s >= length columns = Left InvalidStack
+    | null targetCol && not (isKing topPillarCard) = Left ColumnKing
+    | not (null targetCol) && not (canStack topPillarCard (fst $ last targetCol)) = Left WrongOrder
+    | otherwise = Right $ board {
+        boardPillars = updatePillar suit (decValue pillarValue) pillars,
+        boardColumns = updateColumn s (targetCol ++ [(topPillarCard, True)]) columns
+      }
   where
-    cols = boardColumns b               -- List of columns
-    pillars = boardPillars b            -- Current state of pillars
-    pillarTop = getPillar pillars suit  -- Top card of the specified pillar
-    topCard = case pillarTop of
-        Just v -> MkCard suit v         -- Extract card from the pillar
-        Nothing -> error "Unexpected empty pillar"
-    target = cols !! idx                -- Target column
-    targetTopCard = if null target then error "Unexpected empty target" else fst (head target)
+    pillars = boardPillars board
+    columns = boardColumns board
+    targetCol = columns !! s
 
+    -- Get the value of the specified pillar
+    pillarValue = getPillar pillars suit
 
+    -- The top card from the pillar
+    topPillarCard = case pillarValue of
+        Nothing -> error "Unexpected empty pillar"  -- Should never happen
+        Just value -> MkCard suit value
 
 {- EXERCISE 13: Solve -}
 solve :: Board -> Board
@@ -335,7 +394,12 @@ tryMoveToPillar idx b = case moveToPillar (FromStack idx) b of
     Right newBoard -> Just newBoard
     Left _ -> Nothing
 
-
+-- Helper function to update a specific pillar
+updatePillar :: Suit -> Maybe Value -> Pillars -> Pillars
+updatePillar Spades value pillars = pillars { spades = value }
+updatePillar Clubs value pillars = pillars { clubs = value }
+updatePillar Hearts value pillars = pillars { hearts = value }
+updatePillar Diamonds value pillars = pillars { diamonds = value }
 
 {- Scaffolding: This checks input indexes and calls the relevant functions -}
 checkStackIndex :: Int -> Either Error ()
