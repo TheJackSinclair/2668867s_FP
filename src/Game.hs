@@ -79,7 +79,7 @@ showDeckSize deck = "Deck size: " ++ show (length deck)
 
 -- Show the discard pile
 showDiscard :: [Card] -> String
-showDiscard discard = "Discard: " ++ unwords (map show (reverse (take 3 (reverse discard))))
+showDiscard discard = "Discard: " ++ unwords (map show (take 3 discard))
 
 -- Show the pillars
 showPillars :: Pillars -> String
@@ -222,16 +222,20 @@ canStackOnPillar card (Just v) = cardValue card /= King && cardValue card == suc
 
 {- EXERCISE 7: Draw -}
 draw :: Board -> Either Error Board
-draw b
-    | null (boardDeck b) && null (boardDiscard b) = Left DeckEmpty  -- No cards to draw
-    | null (boardDeck b) =  -- Deck is empty, reuse reversed discard
-        let newDeck = reverse (boardDiscard b)
+draw board
+    | null deck && null discard = Left DeckEmpty  -- Both deck and discard are empty
+    | null deck =  -- Deck is empty, reverse discard to create a new deck
+        let newDeck = reverse discard
             newDiscard = [head newDeck]
-        in Right b { boardDeck = tail newDeck, boardDiscard = newDiscard }
-    | otherwise =  -- Normal draw
-        let (card:restDeck) = boardDeck b
-            updatedDiscard = take 3 (card : boardDiscard b)  -- Keep only the top 3 cards in discard
-        in Right b { boardDeck = restDeck, boardDiscard = updatedDiscard }
+        in Right board { boardDeck = tail newDeck, boardDiscard = newDiscard }
+    | otherwise =  -- Normal draw from the deck
+        let (card:restDeck) = deck
+            updatedDiscard = card : discard
+        in Right board { boardDeck = restDeck, boardDiscard = updatedDiscard }
+  where
+    deck = boardDeck board
+    discard = boardDiscard board
+
 
 
 {- EXERCISE 8: Move -}
