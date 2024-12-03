@@ -59,7 +59,6 @@ data Board = MkBoard {
     deriving (Eq)
 
 
-
 {- EXERCISE 3: Show instance for the board -}
 {- We recommend writing helper functions. -}
 
@@ -96,31 +95,29 @@ showPillar (Just v) = show v
 
 -- Show the column headers
 showColumnHeaders :: String
-showColumnHeaders = unwords [ "[" ++ show i ++ "]" | i <- [0..6] ]
+showColumnHeaders = unwords [ "[" ++ show i ++ "]" | i <- [0..6 :: Int] ]
 
--- Show the columns row by row
+-- Show the columns
 showColumns :: [Column] -> String
 showColumns columns =
     let maxHeight = maximum (map length columns)
     in unlines [unwords [showColumnCard (getRow col row) | col <- columns] | row <- [0..maxHeight-1]]
 
--- Get a card from a specific row in the column (or return Nothing)
+-- Get a card from a row
 getRow :: Column -> Int -> Maybe (Card, Bool)
 getRow col row
     | row < length col = Just (col !! row)
     | otherwise = Nothing
 
--- Format a single card in a column
+-- Format a card
 showColumnCard :: Maybe (Card, Bool) -> String
-showColumnCard (Just (card, True))  = show card    -- Face-up card
-showColumnCard (Just (_, False)) = "???"           -- Hidden card
-showColumnCard Nothing = "   "                     -- Empty space
-
-
+showColumnCard (Just (card, True))  = show card    
+showColumnCard (Just (_, False)) = "???"           
+showColumnCard Nothing = "   "                     
 
 {- EXERCISE 4: Board Setup -}
-markCards :: [Card] -> Column
-markCards cards = map (\(c, isLast) -> (c, isLast)) (zip cards faceStates)
+cardUpOrDown :: [Card] -> Column
+cardUpOrDown cards = map (\(c, isLast) -> (c, isLast)) (zip cards faceStates)
   where
     faceStates = replicate (length cards - 1) False ++ [True]
 
@@ -133,7 +130,7 @@ dealColumns deck numCols = (columns, remainingDeck)
     dealColumn :: ([Column], Deck) -> Int -> ([Column], Deck)
     dealColumn (cols, cards) n = 
         let (columnCards, rest) = splitAt n cards
-            markedCards = markCards columnCards
+            markedCards = cardUpOrDown columnCards
         in (cols ++ [markedCards], rest)
 
 setup :: Deck -> Board
@@ -146,11 +143,9 @@ setup d = MkBoard
   where
     (columns, restDeck) = dealColumns d 7
 
-
-
 {- EXERCISE 5: Win checking -}
 isWon :: Board -> Bool
-isWon b = all isKing [Spades, Clubs, Hearts, Diamonds]
+isWon b = all isKing [Spades, Clubs, Hearts, Diamonds] -- To who ever is reading this, I can never play solitaire again...
   where
     pillars = boardPillars b
     isKing suit = getPillar pillars suit == Just King
@@ -192,21 +187,25 @@ decPillar ps Diamonds = ps { diamonds = decValue $ diamonds ps }
 
 -- Flips the top card of all columns, if not already flipped
 flipTopCard :: Column -> Column
-flipTopCard [] = []  -- Empty column
+flipTopCard [] = []  
 flipTopCard col
-    | snd (last col) = col  -- Top card already visible
-    | otherwise = init col ++ [(fst (last col), True)]  -- Make top card visible
-
+    | snd (last col) = col 
+    | otherwise = init col ++ [(fst (last col), True)]  
 
 flipCards :: Board -> Board
 flipCards b = b { boardColumns = map flipTopCard (boardColumns b) }
 
 -- Checks whether it's possible to stack the first card onto the second.
-canStack :: Card -> Card -> Bool
-canStack card onto = 
-    (isRed card /= isRed onto) && 
-    (cardValue card /= Ace && cardValue card == pred (cardValue onto))
+colour :: Suit -> String
+colour Hearts   = "red"
+colour Diamonds = "red"
+colour Clubs    = "black"
+colour Spades   = "black"
 
+canStack :: Card -> Card -> Bool
+canStack card1 card2 =
+  colour (cardSuit card1) /= colour (cardSuit card2) &&
+  fromEnum (cardValue card1) == fromEnum (cardValue card2) - 1
 
 -- Updates a column at the given index
 updateColumn :: Int -> Column -> [Column] -> [Column]
@@ -218,17 +217,15 @@ canStackOnPillar :: Card -> Maybe Value -> Bool
 canStackOnPillar card Nothing = cardValue card == Ace
 canStackOnPillar card (Just v) = cardValue card /= King && cardValue card == succ v
   
-
-
 {- EXERCISE 7: Draw -}
 draw :: Board -> Either Error Board
 draw board
-    | null deck && null discard = Left DeckEmpty  -- Both deck and discard are empty
-    | null deck =  -- Deck is empty, reverse discard to create a new deck
+    | null deck && null discard = Left DeckEmpty  
+    | null deck = 
         let newDeck = reverse discard
             newDiscard = [head newDeck]
         in Right board { boardDeck = tail newDeck, boardDiscard = newDiscard }
-    | otherwise =  -- Normal draw from the deck
+    | otherwise =  
         let (card:restDeck) = deck
             updatedDiscard = card : discard
         in Right board { boardDeck = restDeck, boardDiscard = updatedDiscard }
@@ -236,12 +233,9 @@ draw board
     deck = boardDeck board
     discard = boardDiscard board
 
-
-
 {- EXERCISE 8: Move -}
 isKing :: Card -> Bool
 isKing card = cardValue card == King
-
 
 move :: Int -> Int -> Int -> Board -> Either Error Board
 move n s1 s2 board
@@ -257,16 +251,12 @@ move n s1 s2 board
     fromCol = columns !! s1
     toCol = columns !! s2
 
-    -- Get visible cards from the source column
     visibleCards = reverse $ takeWhile snd $ reverse fromCol
 
-    -- Get the cards to move
     cardsToMove = take n visibleCards
 
-    -- The top card being moved
     topCard = fst $ head cardsToMove
 
-    -- Updated columns after the move
     newFromCol = take (length fromCol - n) fromCol
     newToCol = toCol ++ cardsToMove
     updatedColumns = updateColumn s1 newFromCol $ updateColumn s2 newToCol columns
@@ -282,7 +272,6 @@ moveStack s1 s2 board
     columns = boardColumns board
     fromCol = columns !! s1
 
-    -- Extract visible cards from the source column
     visibleCards = reverse $ takeWhile snd $ reverse fromCol
 
 
@@ -303,9 +292,7 @@ moveFromDiscard s board
     columns = boardColumns board
     targetCol = columns !! s
 
-    -- Get the top card from the discard pile
     topDiscard = head discard
-
 
 {- EXERCISE 11: Move to Pillar -} 
 moveToPillar :: CardSource -> Board -> Either Error Board
@@ -328,10 +315,8 @@ moveToPillar cardSource board = case cardSource of
     columns = boardColumns board
     pillars = boardPillars board
 
-    -- Get the top card from discard
     topDiscard = head discard
 
-    -- Move card to the appropriate pillar
     moveCardToPillar :: Card -> Board -> Either Error Board
     moveCardToPillar card b =
         let suit = cardSuit card
@@ -348,13 +333,18 @@ moveToPillar cardSource board = case cardSource of
                then Right (updateBoard (incValue currentValue))
                else Left WrongPillarOrder
 
--- Checks whether a card can be added to a pillar
 canAddToPillar :: Card -> Maybe Value -> Bool
 canAddToPillar card Nothing = cardValue card == Ace
 canAddToPillar card (Just v) = cardValue card == succ v
 
             
 {- EXERCISE 12: Move from Pillar -}
+updatePillar :: Suit -> Maybe Value -> Pillars -> Pillars
+updatePillar Spades value pillars = pillars { spades = value }
+updatePillar Clubs value pillars = pillars { clubs = value }
+updatePillar Hearts value pillars = pillars { hearts = value }
+updatePillar Diamonds value pillars = pillars { diamonds = value }
+
 moveFromPillar :: Suit -> Int -> Board -> Either Error Board
 moveFromPillar suit s board
     | pillarValue == Nothing = Left PillarEmpty
@@ -370,40 +360,30 @@ moveFromPillar suit s board
     columns = boardColumns board
     targetCol = columns !! s
 
-    -- Get the value of the specified pillar
     pillarValue = getPillar pillars suit
 
-    -- The top card from the pillar
     topPillarCard = case pillarValue of
-        Nothing -> error "Unexpected empty pillar"  -- Should never happen
+        Nothing -> error "Bro your pillars empty"
         Just value -> MkCard suit value
 
 {- EXERCISE 13: Solve -}
 solve :: Board -> Board
-solve b
-    | isWon b = b
-    | otherwise = case tryCommands b of
-        Just newBoard -> solve newBoard
-        Nothing -> b
-
-tryCommands :: Board -> Maybe Board
-tryCommands b = foldr tryMove Nothing [0..length (boardColumns b) - 1]
+solve board
+  | board == nextBoard = board
+  | otherwise = solve nextBoard
   where
-    tryMove idx acc = case acc of
-        Just x -> Just x
-        Nothing -> tryMoveToPillar idx b
+    nextBoard = solveStep board
 
-tryMoveToPillar :: Int -> Board -> Maybe Board
-tryMoveToPillar idx b = case moveToPillar (FromStack idx) b of
-    Right newBoard -> Just newBoard
-    Left _ -> Nothing
+solveStep :: Board -> Board
+solveStep board = foldl tryMove board [0 .. (length (boardColumns board) - 1)]
 
--- Helper function to update a specific pillar
-updatePillar :: Suit -> Maybe Value -> Pillars -> Pillars
-updatePillar Spades value pillars = pillars { spades = value }
-updatePillar Clubs value pillars = pillars { clubs = value }
-updatePillar Hearts value pillars = pillars { hearts = value }
-updatePillar Diamonds value pillars = pillars { diamonds = value }
+tryMove :: Board -> StackIndex -> Board
+tryMove board idx =
+  case moveToPillar (FromStack idx) board of
+    Right updatedBoard -> updatedBoard
+    Left _ -> board
+
+
 
 {- Scaffolding: This checks input indexes and calls the relevant functions -}
 checkStackIndex :: Int -> Either Error ()

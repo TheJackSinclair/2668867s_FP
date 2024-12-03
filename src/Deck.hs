@@ -70,26 +70,23 @@ deckCorrect deck = sort deck == sort deckOf52
 {- Shuffling -}
 
 {- EXERCISE 2: Fisher-Yates Shuffle -}
-switch :: Int -> Int -> [a] -> [a]
-switch i j xs
-    | i == j = xs  -- If the indices are the same, do nothing
-    | otherwise =
-        let elemI = xs !! i
-            elemJ = xs !! j
-        in [if k == i then elemJ
-           else if k == j then elemI
-           else x | (x, k) <- zip xs [0..]]
+swap :: Int -> Int -> [a] -> [a]
+swap i j xs 
+  | i == j = xs
+  | otherwise =
+    let elemI = xs !! i
+        elemJ = xs !! j 
+        replace k v xs' = [if idx == k then v else val | (idx, val) <- zip [0..] xs'] 
+    in replace i elemJ (replace j elemI xs)
 
 shuffle :: StdGen -> Deck -> Deck
-shuffle rng deck = shuffle' rng deck 0 (length deck - 1)
+shuffle rng deck = go rng deck (length deck - 1)
   where
-    shuffle' :: StdGen -> Deck -> Int -> Int -> Deck
-    shuffle' _ deck' i n
-        | i >= n = deck'  -- Base case: all elements have been processed
-        | otherwise =
-            let (j, newRng) = uniformR (i, n) rng  -- Get a random index j such that i <= j < n
-                swappedDeck = switch i j deck'     -- Swap elements at indices i and j
-            in shuffle' newRng swappedDeck (i + 1) n  -- Recur with the next index and updated RNG
+    go _ d (-1) = d 
+    go gen d i =
+      let (j, gen') = randomR (0, i) gen 
+          d' = swap i j d  
+      in go gen' d' (i - 1)
 
 
 
